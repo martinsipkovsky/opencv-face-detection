@@ -6,9 +6,15 @@ import numpy as np
 from collections import deque
 import scipy.signal
 
+RESOLUTION = (640, 360)
+
+TALKING_TREAHOLD = 60
+TALKING_INTENSITY = 20
+MOUTH_TALK_BOOLEAN_BUFFER = 10
+
 
 # Video capture using WebCam
-cap = cv2.VideoCapture("media1.mp4")
+cap = cv2.VideoCapture(1)
 
 # print a feedback
 print('Camera On')
@@ -30,13 +36,15 @@ start_time = cv2.getTickCount()
 frame_count = 0
 fps = 0
 
+mouthTalkBuffer = []
+
 
 while True:
     # Original frame ~ Video frame from camera
     ret, frame = cap.read()
 
     # Rescale the image
-    frame = cv2.resize(frame, (640, 360))
+    frame = cv2.resize(frame, RESOLUTION) #(640, 360) (360, 640)
 
     # Convert original frame to gray
     try:
@@ -66,10 +74,10 @@ while True:
         forehead_w = int(w * 0.4)   # Less wide (60% of face width)
 
         # 1. Isolate Mouth ROI
-        mouth_y = int(y + h * 0.72) 
+        mouth_y = int(y + h * 0.69) 
         mouth_h = int(h * 0.25)    
-        mouth_x = int(x + w * 0.25) 
-        mouth_w = int(w * 0.5)
+        mouth_x = int(x + w * 0.3) 
+        mouth_w = int(w * 0.4)
 
         cv2.rectangle(frame, (mouth_x, mouth_y), (mouth_x + mouth_w, mouth_y + mouth_h), (50, 100, 255), 1)    
 
@@ -92,14 +100,20 @@ while True:
             prev_gray_mouth = cv2.resize(prev_gray_mouth, (gray_mouth_roi.shape[1], gray_mouth_roi.shape[0])) 
 
             frame_diff = cv2.absdiff(gray_mouth_roi, prev_gray_mouth)
-            _, thresh = cv2.threshold(frame_diff, 30, 255, cv2.THRESH_BINARY)  # Adjust threshold (30)
+            _, thresh = cv2.threshold(frame_diff, TALKING_TREAHOLD, 255, cv2.THRESH_BINARY)  # Adjust threshold (30)
             movement_intensity = np.sum(thresh) // 255  # Count white pixels
 
             # 3. Speech/Silence Classification (Simple thresholding)
-            if movement_intensity > 10:  # Adjust threshold (100)
+            mouthTalkBuffer.append(movement_intensity > TALKING_INTENSITY)
+            if len(mouthTalkBuffer) > MOUTH_TALK_BOOLEAN_BUFFER:
+                mouthTalkBuffer = mouthTalkBuffer[-MOUTH_TALK_BOOLEAN_BUFFER:]
+
+            if mouthTalkBuffer.count(True) > len(mouthTalkBuffer)/2:  # Adjust threshold (100)
                 cv2.putText(frame, "Talking", (x, mouth_y + mouth_h + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 0), 1)
             else:
                 cv2.putText(frame, "Silent", (x, mouth_y + mouth_h + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 1)
+            
+            #print(len(mouthTalkBuffer), mouthTalkBuffer.count(True), mouthTalkBuffer.count(False))
 
         prev_gray_mouth = gray_mouth_roi.copy()
 
@@ -165,6 +179,7 @@ while True:
 
 
     # Load video frame
+    frame = cv2.resize(frame, (RESOLUTION[0]*2, RESOLUTION[1]*2))
     cv2.imshow('Video Frame', frame)
 
     # Wait 1 millisecond second until q key is press
